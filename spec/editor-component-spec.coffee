@@ -2,11 +2,13 @@
 ReactEditorView = require '../src/react-editor-view'
 nbsp = String.fromCharCode(160)
 
-describe "EditorComponent", ->
+fdescribe "EditorComponent", ->
   [contentNode, editor, wrapperView, component, node, verticalScrollbarNode, horizontalScrollbarNode] = []
-  [lineHeightInPixels, charWidth, delayAnimationFrames, nextAnimationFrame] = []
+  [lineHeightInPixels, charWidth, delayAnimationFrames, nextAnimationFrame, lineOverdrawMargin] = []
 
   beforeEach ->
+    lineOverdrawMargin = 2
+
     waitsForPromise ->
       atom.packages.activatePackage('language-javascript')
 
@@ -29,7 +31,7 @@ describe "EditorComponent", ->
       contentNode = document.querySelector('#jasmine-content')
       contentNode.style.width = '1000px'
 
-      wrapperView = new ReactEditorView(editor)
+      wrapperView = new ReactEditorView(editor, {lineOverdrawMargin})
       wrapperView.attachToDom()
       {component} = wrapperView
       component.setLineHeight(1.3)
@@ -49,39 +51,42 @@ describe "EditorComponent", ->
     contentNode.style.width = ''
 
   describe "line rendering", ->
-    it "renders only the currently-visible lines, translated relative to the scroll position", ->
+    it "renders the currently-visible lines plus the overdraw margin", ->
       node.style.height = 4.5 * lineHeightInPixels + 'px'
       component.measureHeightAndWidth()
 
-      lines = node.querySelectorAll('.line')
-      expect(lines.length).toBe 6
-      expect(lines[0].textContent).toBe editor.lineForScreenRow(0).text
-      expect(lines[5].textContent).toBe editor.lineForScreenRow(5).text
+      linesNode = node.querySelector('.lines')
+      expect(linesNode.style['-webkit-transform']).toBe "translate3d(0px, 0px, 0px)"
+      lineNodes = node.querySelectorAll('.line')
+      expect(lineNodes.length).toBe 6 + 2 # no margin above
+      expect(lineNodes[0].textContent).toBe editor.lineForScreenRow(0).text
+      expect(lineNodes[5].textContent).toBe editor.lineForScreenRow(5).text
 
-      verticalScrollbarNode.scrollTop = 2.5 * lineHeightInPixels
+      verticalScrollbarNode.scrollTop = 4.5 * lineHeightInPixels
       verticalScrollbarNode.dispatchEvent(new UIEvent('scroll'))
 
+      expect(linesNode.style['-webkit-transform']).toBe "translate3d(0px, #{-4.5 * lineHeightInPixels}px, 0px)"
       lineNodes = node.querySelectorAll('.line')
-      expect(lineNodes.length).toBe 6
-      expect(lineNodes[0].style['-webkit-transform']).toBe "translate3d(0px, #{-.5 * lineHeightInPixels}px, 0px)"
+      expect(lineNodes.length).toBe 6 + 4 # margin above and below
+      expect(lineNodes[0].offsetTop).toBe 2 * lineHeightInPixels
       expect(lineNodes[0].textContent).toBe editor.lineForScreenRow(2).text
-      expect(lineNodes[5].textContent).toBe editor.lineForScreenRow(7).text
-      expect(lineNodes[5].style['-webkit-transform']).toBe "translate3d(0px, #{4.5 * lineHeightInPixels}px, 0px)"
+      expect(lineNodes[7].offsetTop).toBe 9 * lineHeightInPixels
+      expect(lineNodes[7].textContent).toBe editor.lineForScreenRow(9).text
 
-    it "updates the translation of subsequent lines when lines are inserted or removed", ->
+    ffit "updates the top position of subsequent lines when lines are inserted or removed", ->
       editor.getBuffer().deleteRows(0, 1)
       lineNodes = node.querySelectorAll('.line')
-      expect(lineNodes[0].style['-webkit-transform']).toBe "translate3d(0px, 0px, 0px)"
-      expect(lineNodes[1].style['-webkit-transform']).toBe "translate3d(0px, #{1 * lineHeightInPixels}px, 0px)"
-      expect(lineNodes[2].style['-webkit-transform']).toBe "translate3d(0px, #{2 * lineHeightInPixels}px, 0px)"
+      expect(lineNodes[0].offsetTop).toBe 0
+      expect(lineNodes[1].offsetTop).toBe 1 * lineHeightInPixels
+      expect(lineNodes[2].offsetTop).toBe 2 * lineHeightInPixels
 
       editor.getBuffer().insert([0, 0], '\n\n')
       lineNodes = node.querySelectorAll('.line')
-      expect(lineNodes[0].style['-webkit-transform']).toBe "translate3d(0px, 0px, 0px)"
-      expect(lineNodes[1].style['-webkit-transform']).toBe "translate3d(0px, #{1 * lineHeightInPixels}px, 0px)"
-      expect(lineNodes[2].style['-webkit-transform']).toBe "translate3d(0px, #{2 * lineHeightInPixels}px, 0px)"
-      expect(lineNodes[3].style['-webkit-transform']).toBe "translate3d(0px, #{3 * lineHeightInPixels}px, 0px)"
-      expect(lineNodes[4].style['-webkit-transform']).toBe "translate3d(0px, #{4 * lineHeightInPixels}px, 0px)"
+      expect(lineNodes[0].offsetTop).toBe 0 * lineHeightInPixels
+      expect(lineNodes[1].offsetTop).toBe 1 * lineHeightInPixels
+      expect(lineNodes[2].offsetTop).toBe 2 * lineHeightInPixels
+      expect(lineNodes[3].offsetTop).toBe 3 * lineHeightInPixels
+      expect(lineNodes[4].offsetTop).toBe 4 * lineHeightInPixels
 
     describe "when indent guides are enabled", ->
       beforeEach ->
